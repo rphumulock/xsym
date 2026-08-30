@@ -1,0 +1,21 @@
+# Where the index is written.
+database = "xsym.db"
+
+# Point this at whatever you want indexed. Names are yours; paths are absolute
+# or relative to where you run xsym.
+[[repos]]
+name = "example"
+path = "./example"
+
+# The rules that make cross-language matching work. These are the knobs that
+# turn a generic indexer into one that understands your domain's conventions.
+[normalize]
+# Leading tokens to drop: jsConsumerConfig -> consumer_config
+strip_prefixes = []
+# Trailing tokens to drop: ConsumerConfigOptions -> consumer_config
+strip_suffixes = []
+
+[normalize.synonyms]
+# Token rewrites applied after splitting.
+configuration = "config"
+opts = "options"

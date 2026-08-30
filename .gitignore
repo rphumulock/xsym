@@ -1,0 +1,5 @@
+/target
+*.db
+*.db-journal
+xsym.toml
+!xsym.toml.example
