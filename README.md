@@ -1,6 +1,10 @@
 # xsym
 
-A cross-language structural code index, served over MCP.
+A cross-language structural code index.
+
+> **Status:** the CLI indexer works. The MCP server is **not built yet** —
+> `src/mcp.rs` documents the intended surface but contains no code. Languages
+> supported today: Go, Rust, Python.
 
 Point it at a set of repositories in different languages and ask it where a
 concept lives. The same struct spelled four ways across four languages
@@ -34,7 +38,9 @@ same binary works on any codebase with the same problem.
 ## Status
 
 The indexing core is complete and tested. The MCP server is the next step —
-see `src/mcp.rs`, which documents the four-tool surface it should expose.
+see `src/mcp.rs`, which documents the four-tool surface it should expose but
+implements none of it. Until that is written, this is a command-line tool only
+and cannot be registered with an MCP client.
 
 Working today:
 
