@@ -88,13 +88,26 @@ a tool already on the machine.
 - **An LSP.** Editors already solve within-language navigation. The value here
   is specifically *across* languages and repos.
 
+## Decision 5 — a connection per MCP call, not a shared one
+
+`rmcp` tool handlers are async and the handler type must be `Clone + Send +
+Sync`. A `rusqlite::Connection` is neither, and threading one through would
+mean a mutex held across await points or a pool.
+
+Instead each call opens its own connection. The index is read-only at query
+time and SQLite handles concurrent readers, so this costs a file open per call
+and removes the entire problem.
+
+**Trade-off:** wrong if the server ever writes. If `index` moves behind a tool,
+this needs a single writer.
+
 ## Next
 
-The MCP server (`src/mcp.rs`). Four tools, no more:
-
-| Tool | Backed by |
-|---|---|
-| `find_symbol(name, kind?, lang?, repo?)` | `Store::find_by_norm` |
-| `compare_type(name)` | group hits by language, diff field sets |
-| `search_code(pattern, glob?)` | ripgrep subprocess |
-| `read_file(repo, path, range?)` | bounds-checked file read |
+- **More languages.** Java, TypeScript and C# are the obvious gaps — the
+  corpus has all three and they index zero files today. Each is a `.scm` file
+  plus a dependency.
+- **Field-level parity in `compare_type`.** It currently lists each
+  declaration's fields; it does not diff them. Normalizing field names and
+  showing present-in-A-missing-in-B is the actual payoff.
+- **Method attribution in Python.** Methods are indexed as functions; only
+  ancestor inspection distinguishes them.

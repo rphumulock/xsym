@@ -1,10 +1,9 @@
 # xsym
 
-A cross-language structural code index.
+A cross-language structural code index, served over MCP.
 
-> **Status:** the CLI indexer works. The MCP server is **not built yet** —
-> `src/mcp.rs` documents the intended surface but contains no code. Languages
-> supported today: Go, Rust, Python.
+> **Status:** working. CLI and MCP server both run. Languages supported today:
+> Go, Rust, Python.
 
 Point it at a set of repositories in different languages and ask it where a
 concept lives. The same struct spelled four ways across four languages
@@ -37,18 +36,34 @@ same binary works on any codebase with the same problem.
 
 ## Status
 
-The indexing core is complete and tested. The MCP server is the next step —
-see `src/mcp.rs`, which documents the four-tool surface it should expose but
-implements none of it. Until that is written, this is a command-line tool only
-and cannot be registered with an MCP client.
-
-Working today:
+Working. The indexer and the MCP server both run.
 
 ```
 xsym index          # walk configured repos, build the index
 xsym find <name>    # cross-language lookup by normalized name
 xsym stats          # row counts
+xsym serve          # run as an MCP server on stdio
 ```
+
+## MCP
+
+Register it with an MCP client:
+
+```
+claude mcp add xsym --scope user -- \
+  /path/to/xsym -c /path/to/xsym.toml serve
+```
+
+Four tools, deliberately no more:
+
+| Tool | What it does |
+|---|---|
+| `find_symbol(name, kind?, language?, repo?)` | Declaration lookup by normalized name, across languages |
+| `compare_type(name)` | One type side by side across languages, with its fields |
+| `search_code(pattern, glob?, repo?)` | Regex fallback via ripgrep |
+| `read_file(repo, path, start_line?, end_line?)` | Read a slice of an indexed file |
+
+`serve` speaks JSON-RPC on stdout, so all logging goes to stderr.
 
 ## Configure
 

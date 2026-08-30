@@ -134,6 +134,89 @@ impl Store {
         Ok(())
     }
 
+    /// Absolute path on disk for a configured repo.
+    pub fn repo_path(&self, name: &str) -> Result<Option<String>> {
+        let mut stmt = self.conn.prepare("SELECT path FROM repos WHERE name = ?1")?;
+        let mut rows = stmt.query(params![name])?;
+        Ok(match rows.next()? {
+            Some(row) => Some(row.get(0)?),
+            None => None,
+        })
+    }
+
+    /// Every configured repo, as (name, path).
+    pub fn repo_paths(&self) -> Result<Vec<(String, String)>> {
+        let mut stmt = self.conn.prepare("SELECT name, path FROM repos ORDER BY name")?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Fields and methods declared under a given parent type in a repo.
+    pub fn fields_of(&self, parent: &str, repo: &str) -> Result<Vec<Hit>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT r.name, f.language, f.path, s.name, s.kind, s.parent, s.start_line, s.signature
+             FROM symbols s
+             JOIN files f ON f.id = s.file_id
+             JOIN repos r ON r.id = f.repo_id
+             WHERE s.parent = ?1 AND r.name = ?2
+             ORDER BY s.start_line",
+        )?;
+        let hits = stmt
+            .query_map(params![parent, repo], |row| {
+                Ok(Hit {
+                    repo: row.get(0)?,
+                    language: row.get(1)?,
+                    path: row.get(2)?,
+                    name: row.get(3)?,
+                    kind: row.get(4)?,
+                    parent: row.get(5)?,
+                    start_line: row.get(6)?,
+                    signature: row.get(7)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(hits)
+    }
+
+    /// Cross-language lookup by normalized key, with optional filters.
+    /// Passing `None` for a filter means "any".
+    pub fn find_filtered(
+        &self,
+        norm: &str,
+        kind: Option<&str>,
+        language: Option<&str>,
+        repo: Option<&str>,
+    ) -> Result<Vec<Hit>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT r.name, f.language, f.path, s.name, s.kind, s.parent, s.start_line, s.signature
+             FROM symbols s
+             JOIN files f ON f.id = s.file_id
+             JOIN repos r ON r.id = f.repo_id
+             WHERE s.norm = ?1
+               AND (?2 IS NULL OR s.kind = ?2)
+               AND (?3 IS NULL OR f.language = ?3)
+               AND (?4 IS NULL OR r.name = ?4)
+             ORDER BY f.language, r.name, f.path",
+        )?;
+        let hits = stmt
+            .query_map(params![norm, kind, language, repo], |row| {
+                Ok(Hit {
+                    repo: row.get(0)?,
+                    language: row.get(1)?,
+                    path: row.get(2)?,
+                    name: row.get(3)?,
+                    kind: row.get(4)?,
+                    parent: row.get(5)?,
+                    start_line: row.get(6)?,
+                    signature: row.get(7)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(hits)
+    }
+
     /// Cross-language lookup by normalized key.
     pub fn find_by_norm(&self, norm: &str) -> Result<Vec<Hit>> {
         let mut stmt = self.conn.prepare(

@@ -30,10 +30,15 @@ enum Command {
     Find { name: String },
     /// Row counts for the current index.
     Stats,
+    /// Run as an MCP server on stdio.
+    Serve,
 }
 
 fn main() -> Result<()> {
+    // stderr, always: in `serve` mode stdout is the MCP transport and any
+    // stray line on it corrupts the protocol.
     tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "xsym=info".into()),
@@ -47,6 +52,11 @@ fn main() -> Result<()> {
     match cli.command {
         Command::Index => index(&cfg, &mut store),
         Command::Find { name } => find(&cfg, &store, &name),
+        Command::Serve => {
+            // stdout is the MCP transport, so logs must go to stderr only.
+            let rt = tokio::runtime::Runtime::new()?;
+            rt.block_on(mcp::serve(cfg.database.clone(), cfg.normalize.clone()))
+        }
         Command::Stats => {
             let (repos, files, symbols) = store.stats()?;
             println!("{repos} repos · {files} files · {symbols} symbols");
