@@ -2,16 +2,12 @@
 
 A cross-language structural code index, served over MCP.
 
-> **Status:** working. CLI and MCP server both run. Languages supported today:
-> Go, Rust, Python.
-
-Point it at a set of repositories in different languages and ask it where a
-concept lives. The same struct spelled four ways across four languages
-collapses to one lookup:
+Point it at repositories in different languages and ask where a concept lives.
+The same type spelled three ways collapses to one lookup:
 
 ```
 $ xsym find ConsumerConfig
-`ConsumerConfig` -> `consumer_config` (14 hits)
+`ConsumerConfig` -> `consumer_config` (8 hits)
 
 go:
   nats.go/jetstream/consumer_config.go:103  ConsumerConfig [type]
@@ -24,80 +20,172 @@ rust:
       pub struct ConsumerConfig {
 ```
 
-## Why
+Grep cannot do this, because the names genuinely differ. xsym normalizes them
+and makes the comparison a query.
 
-If you maintain a protocol with clients in several languages, the same wire
-type is declared once per language under a different naming convention. Keeping
-them in sync is a manual diff across repos. Grep does not help, because the
-names genuinely differ. This normalizes them and makes the comparison a query.
+**Languages today:** Go, Rust, Python. Adding one is a query file — see
+[Adding a language](#adding-a-language).
 
-Nothing here is protocol-specific: the naming rules are configuration, so the
-same binary works on any codebase with the same problem.
+---
 
-## Status
+## Quick start
 
-Working. The indexer and the MCP server both run.
+### 1. Build and install
 
-```
-xsym index          # walk configured repos, build the index
-xsym find <name>    # cross-language lookup by normalized name
-xsym stats          # row counts
-xsym serve          # run as an MCP server on stdio
-```
+Needs a Rust toolchain. [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`)
+must be on `PATH` for the `search_code` tool; everything else works without it.
 
-## MCP
-
-Register it with an MCP client:
-
-```
-claude mcp add xsym --scope user -- \
-  /path/to/xsym -c /path/to/xsym.toml serve
+```bash
+git clone https://github.com/rphumulock/xsym
+cd xsym
+cargo build --release
+cp target/release/xsym ~/.local/bin/     # or anywhere on your PATH
 ```
 
-Four tools, deliberately no more:
+### 2. Write a config
 
-| Tool | What it does |
-|---|---|
-| `find_symbol(name, kind?, language?, repo?)` | Declaration lookup by normalized name, across languages |
-| `compare_type(name)` | One type side by side across languages, with its fields |
-| `search_code(pattern, glob?, repo?)` | Regex fallback via ripgrep |
-| `read_file(repo, path, start_line?, end_line?)` | Read a slice of an indexed file |
+Copy the example and point it at repos you already have checked out:
 
-`serve` speaks JSON-RPC on stdout, so all logging goes to stderr.
-
-## Configure
+```bash
+cp xsym.toml.example xsym.toml
+```
 
 ```toml
-database = "xsym.db"
+database = "/home/you/.local/share/xsym/xsym.db"
 
 [[repos]]
 name = "nats.go"
-path = "/path/to/nats.go"
+path = "/home/you/src/nats.go"
 
+[[repos]]
+name = "nats.py"
+path = "/home/you/src/nats.py"
+```
+
+One `[[repos]]` block per repository. `name` is yours to choose — it is what
+shows up in results. Create the database's parent directory first:
+
+```bash
+mkdir -p ~/.local/share/xsym
+```
+
+### 3. Build the index
+
+```bash
+xsym -c xsym.toml index
+```
+
+```
+nats.go: 182 indexed, 0 unchanged
+nats.py: 198 indexed, 0 unchanged
+```
+
+Re-run it any time. Files are content-hashed, so unchanged files are never
+reparsed and a repeat run takes well under a second.
+
+### 4. Query it
+
+```bash
+xsym -c xsym.toml find StreamConfig
+xsym -c xsym.toml stats
+```
+
+### 5. Wire it into an MCP client (optional)
+
+```bash
+claude mcp add xsym --scope user -- \
+  ~/.local/bin/xsym -c /absolute/path/to/xsym.toml serve
+```
+
+Use absolute paths — the client starts the binary from an unspecified working
+directory. Then start a new session; MCP servers connect at startup, so an
+already-running session will not pick it up. Verify with `claude mcp list`.
+
+### Skip the `-c` flag
+
+Either run from the directory holding `xsym.toml` (the default), or alias it:
+
+```bash
+alias xsym='xsym -c ~/path/to/xsym.toml'
+```
+
+---
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `xsym index` | Walk the configured repos and build the index |
+| `xsym find <name>` | Cross-language lookup by normalized name |
+| `xsym stats` | Repo, file and symbol counts |
+| `xsym serve` | Run as an MCP server on stdio |
+
+`-c <path>` selects the config; it defaults to `./xsym.toml`.
+
+## MCP tools
+
+Four, deliberately no more:
+
+| Tool | What it does |
+|---|---|
+| `find_symbol(name, kind?, language?, repo?)` | Declaration lookup by normalized name |
+| `compare_type(name)` | One type across languages, with its fields |
+| `search_code(pattern, glob?, repo?)` | Regex search via ripgrep |
+| `read_file(repo, path, start_line?, end_line?)` | Read a slice of an indexed file |
+
+`serve` speaks JSON-RPC on stdout, so all logging goes to stderr. Never print
+to stdout from a tool handler.
+
+## Tuning matches
+
+If two things that should match don't, it's the normalization rules — not the
+index. They live in the config:
+
+```toml
 [normalize]
-strip_prefixes = ["js", "nats"]   # jsConsumerConfig -> consumer_config
+# Leading tokens to drop: jsConsumerConfig -> consumer_config
+strip_prefixes = ["js", "nats"]
+# Trailing tokens to drop: ConsumerConfigOptions -> consumer_config
 strip_suffixes = []
 
 [normalize.synonyms]
-configuration = "config"          # ConsumerConfiguration -> consumer_config
+# Token rewrites applied after splitting
+configuration = "config"    # ConsumerConfiguration -> consumer_config
+opts = "options"
 ```
+
+Identifiers are split on separators, camelCase boundaries, and acronym
+boundaries (`HTTPServer` -> `http`, `server`), then these rules apply. Check
+what a name resolves to with `xsym find` — the output shows the normalized key.
+
+Be careful with synonyms: a wrong one silently merges two distinct concepts.
 
 ## Performance
 
-Three repos, 552 files, 12,023 symbols: **7.1s** cold. Re-index with nothing
-changed: **0.07s** — every file is content-hashed, so unchanged files are never
-reparsed.
+40 Go repositories, 2,441 files, 52,251 symbols:
+
+| | |
+|---|---|
+| Cold index | ~25s |
+| Re-index, nothing changed | **0.7s** |
+| Database size | ~7 MB |
 
 ## Adding a language
 
-Three steps, no Rust logic:
+Three steps, no changes to the extractor:
 
 1. `cargo add tree-sitter-<lang>`
-2. write `src/parse/queries/<lang>.scm`, capturing `@name` and `@def.<kind>`
-3. add one arm to each match in `src/parse/mod.rs`
+2. Write `src/parse/queries/<lang>.scm`, capturing `@name` and `@def.<kind>`:
 
-The extractor never names a language — it reads capture names, so the queries
-carry all the per-language knowledge. See `DESIGN.md`.
+   ```scheme
+   (function_declaration name: (identifier) @name) @def.function
+   ```
+
+3. Add one arm to each `match` in `src/parse/mod.rs`
+
+`extract.rs` never names a language — it reads capture names, so the queries
+carry all the per-language knowledge. `DESIGN.md` explains why, and records the
+trade-offs and what was deliberately left out.
 
 ## License
 
