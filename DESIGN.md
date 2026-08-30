@@ -103,9 +103,24 @@ this needs a single writer.
 
 ## Next
 
-- **More languages.** Java, TypeScript and C# are the obvious gaps — the
-  corpus has all three and they index zero files today. Each is a `.scm` file
-  plus a dependency.
+- **More languages.** Go, Rust and Python have query files. Measured against a
+  106-repo NATS corpus, the unparsed remainder breaks down as:
+
+  | Language | Repos | Status |
+  |---|---:|---|
+  | Java | 14 | no query file |
+  | TypeScript / JavaScript | 8 | no query file |
+  | C# | 4 | no query file |
+  | Ruby | 4 | no query file |
+  | C | 2 | no query file |
+  | Elixir, Swift | 2 each | no query file |
+  | Crystal, Kotlin, Scala, Zig | 1 each | no query file |
+  | (docs/config only) | 20 | nothing to parse |
+
+  Java is the highest-leverage next one: 14 repos come online for one `.scm`
+  file, one dependency, and one arm in each `match` in `src/parse/mod.rs`. If
+  that lands without touching `extract.rs`, the queries-as-data bet in
+  Decision 1 is confirmed.
 - **Field-level parity in `compare_type`.** It currently lists each
   declaration's fields; it does not diff them. Normalizing field names and
   showing present-in-A-missing-in-B is the actual payoff.
